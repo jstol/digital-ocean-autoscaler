@@ -62,6 +62,8 @@ func start_node(master_host string, name string) {
 
 func main() {
 	host := flag.String("host", "0.0.0.0:8000", "the IP address and port")
-	fmt.Printf("Starting master at %s\n", *host)
+	flag.Parse()
+
+	fmt.Printf("Starting client. Connecting to master at %s\n", *host)
 	start_node(*host, "1")
 }

@@ -57,6 +57,8 @@ func monitor_nodes(host string) {
 
 func main() {
 	host := flag.String("host", "0.0.0.0:8000", "the IP address and port")
+	flag.Parse()
+
 	fmt.Printf("Starting master at %s\n", *host)
 	monitor_nodes(*host)
 }

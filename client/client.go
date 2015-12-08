@@ -1,8 +1,6 @@
 package main
 
 import (
-	"bytes"
-	"encoding/binary"
 	"flag"
 	"fmt"
 	"net/url"
@@ -48,13 +46,8 @@ func start_node(master_host string, name string) {
 		}
 
 		avg := load_avg.Load1
-		buf := new(bytes.Buffer)
-		if err = binary.Write(buf, binary.LittleEndian, avg); err != nil {
-			utils.Die("Failed to write to buffer: %s", err.Error())
-		}
-
 		fmt.Printf("Client(%s): sending survey response\n", name)
-		if err = sock.Send([]byte(buf.Bytes())); err != nil {
+		if err = sock.Send([]byte(fmt.Sprintf("%2f", avg))); err != nil {
 			utils.Die("Cannot send: %s", err.Error())
 		}
 	}

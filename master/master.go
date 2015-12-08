@@ -11,7 +11,6 @@ import (
 	// "github.com/digitalocean/godo"
 	"github.com/gdamore/mangos"
 	"github.com/gdamore/mangos/protocol/surveyor"
-	"github.com/gdamore/mangos/transport/ipc"
 	"github.com/gdamore/mangos/transport/tcp"
 )
 
@@ -26,7 +25,6 @@ func monitor_nodes(host string) {
 		utils.Die("Can't get new surveyor socket: %s", err)
 	}
 
-	sock.AddTransport(ipc.NewTransport())
 	sock.AddTransport(tcp.NewTransport())
 
 	// Begin listening on the URL
@@ -35,12 +33,14 @@ func monitor_nodes(host string) {
 	}
 
 	// Set "deadline" for the survey
-	err = sock.SetOption(mangos.OptionSurveyTime, time.Second*2)
-	if err != nil {
-		utils.Die("SetOption(): %s", err.Error())
+	if err = sock.SetOption(mangos.OptionSurveyTime, time.Second); err != nil {
+		utils.Die("SetOption(mangos.OptionSurveyTime): %s", err.Error())
+	}
+	if err = sock.SetOption(mangos.OptionRecvDeadline, time.Second*2); err != nil {
+		utils.Die("SetOption(mangos.OptionRecvDeadline): %s", err.Error())
 	}
 
-	// Send out survey requiests
+	// Send out survey requests
 	for {
 		fmt.Println("Sending master request")
 		if err = sock.Send([]byte("CPU")); err != nil {
@@ -50,8 +50,9 @@ func monitor_nodes(host string) {
 			if msg, err = sock.Recv(); err != nil {
 				break
 			}
-			fmt.Printf("Server: received \"%s\" survey response\n", string(msg))
+			fmt.Printf("Server: Received \"%s\" survey response\n", string(msg))
 		}
+		time.Sleep(time.Second * 3)
 	}
 }
 

@@ -1,6 +1,7 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"net/url"
 	"time"
@@ -55,6 +56,7 @@ func monitor_nodes(host string) {
 }
 
 func main() {
-	fmt.Printf("Starting master at localhost:8080\n")
-	monitor_nodes("localhost:8080")
+	host := flag.String("host", "0.0.0.0:8000", "the IP address and port")
+	fmt.Printf("Starting master at %s\n", *host)
+	monitor_nodes(*host)
 }

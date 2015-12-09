@@ -18,6 +18,8 @@ func start_node(master_host string, name string) {
 	var err error
 	var msg []byte
 	master_url := url.URL{Scheme: "tcp", Host: master_host}
+	var threshold double
+	threshold = 1.7
 
 	// Try to get new "respondent" socket
 	if sock, err = respondent.NewSocket(); err != nil {
@@ -39,13 +41,27 @@ func start_node(master_host string, name string) {
 		fmt.Printf("Client(%s): Received \"%s\" survey request\n", name, string(msg))
 
 		var load_avg *load.LoadAvgStat
+		var weight int
 		if load_avg, err = load.LoadAvg(); err != nil {
 			utils.Die("Cannot get load average: %s", err.Error())
 		}
 
 		avg := load_avg.Load1
+		//Weight must range from 1 - 256
+		if avg < 0.001 {
+			avg = 0.001
+		}
+		if avg > max_load {
+			avg = max_load
+		}
+		weight = int(((255 / max_load) * ((max_load + 0.001) - avg)) + 1)
+		fmt.Printf("weight is now:  %d\n", *weight)
+
 		fmt.Printf("Client(%s): Sending survey response\n", name)
-		if err = sock.Send([]byte(fmt.Sprintf("%2f", avg))); err != nil {
+		//	if err = sock.Send([]byte(fmt.Sprintf("%2f", avg))); err != nil {
+		//		utils.Die("Cannot send: %s", err.Error())
+		//	}
+		if err = sock.Send([]byte(fmt.Sprintf("%2d", weight))); err != nil {
 			utils.Die("Cannot send: %s", err.Error())
 		}
 	}

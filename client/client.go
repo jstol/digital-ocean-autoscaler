@@ -10,14 +10,15 @@ import (
 	"github.com/gdamore/mangos"
 	"github.com/gdamore/mangos/protocol/respondent"
 	"github.com/gdamore/mangos/transport/tcp"
+	"github.com/shirou/gopsutil/cpu"
 	"github.com/shirou/gopsutil/load"
 )
 
-func start_node(master_host string, name string) {
+func startNode(masterHost, name string) {
 	var sock mangos.Socket
 	var err error
 	var msg []byte
-	master_url := url.URL{Scheme: "tcp", Host: master_host}
+	masterUrl := url.URL{Scheme: "tcp", Host: masterHost}
 
 	// Try to get new "respondent" socket
 	if sock, err = respondent.NewSocket(); err != nil {
@@ -27,7 +28,7 @@ func start_node(master_host string, name string) {
 	sock.AddTransport(tcp.NewTransport())
 
 	// Connect to master
-	if err = sock.Dial(master_url.String()); err != nil {
+	if err = sock.Dial(masterUrl.String()); err != nil {
 		utils.Die("Can't dial on respondent socket: %s", err.Error())
 	}
 
@@ -38,23 +39,44 @@ func start_node(master_host string, name string) {
 		}
 		fmt.Printf("Client(%s): Received \"%s\" survey request\n", name, string(msg))
 
-		var load_avg *load.LoadAvgStat
-		if load_avg, err = load.LoadAvg(); err != nil {
+		var loadAvg *load.LoadAvgStat
+		if loadAvg, err = load.LoadAvg(); err != nil {
 			utils.Die("Cannot get load average: %s", err.Error())
 		}
 
-		avg := load_avg.Load1
+		var cpuInfo []cpu.CPUInfoStat
+		if cpuInfo, err = cpu.CPUInfo(); err != nil {
+			utils.Die("Cannot get CPU info: %s", err.Error())
+		}
+		fmt.Printf("CPU INFO len: %d\n", len(cpuInfo))
+
+		// Get the normalized CPU load
+		avg := loadAvg.Load1
+		cores := int32(0)
+		for _, info := range cpuInfo {
+			fmt.Printf("Inner Cores: %d\n", info.Cores)
+			cores += info.Cores
+		}
+		fmt.Printf("Load avg: %f\n", avg)
+		fmt.Printf("Cores: %d\n", cores)
+		avg = avg / float64(cores)
+
 		fmt.Printf("Client(%s): Sending survey response\n", name)
-		if err = sock.Send([]byte(fmt.Sprintf("%2f", avg))); err != nil {
+		if err = sock.Send([]byte(fmt.Sprintf("%f", avg))); err != nil {
 			utils.Die("Cannot send: %s", err.Error())
 		}
 	}
 }
 
 func main() {
-	host := flag.String("host", "0.0.0.0:8000", "the IP address and port")
+	host := flag.String("host", "", "the IP address and port")
+	clientId := flag.Int64("id", 1, "the id of the node")
 	flag.Parse()
 
+	if *host == "" {
+		utils.Die("No host address provided")
+	}
+
 	fmt.Printf("Starting client. Connecting to master at %s\n", *host)
-	start_node(*host, "1")
+	startNode(*host, fmt.Sprintf("%d", *clientId))
 }

@@ -18,8 +18,8 @@ func start_node(master_host string, name string) {
 	var err error
 	var msg []byte
 	master_url := url.URL{Scheme: "tcp", Host: master_host}
-	var threshold double
-	threshold = 1.7
+	var max_load float64
+	max_load = 0.1
 
 	// Try to get new "respondent" socket
 	if sock, err = respondent.NewSocket(); err != nil {
@@ -55,7 +55,7 @@ func start_node(master_host string, name string) {
 			avg = max_load
 		}
 		weight = int(((255 / max_load) * ((max_load + 0.001) - avg)) + 1)
-		fmt.Printf("weight is now:  %d\n", *weight)
+		fmt.Printf("weight is now:  %d\n", weight)
 
 		fmt.Printf("Client(%s): Sending survey response\n", name)
 		//	if err = sock.Send([]byte(fmt.Sprintf("%2f", avg))); err != nil {

@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"net/url"
 	"os/exec"
-	"strings"
 	"time"
+	"strings"
 
 	"github.com/jstol/digital-ocean-autoscaler/utils"
 
@@ -52,33 +52,33 @@ func monitor_nodes(host string) {
 			if msg, err = sock.Recv(); err != nil {
 				break
 			}
-			updateWeights(msg)
+			updateWeights(string(msg))
 			fmt.Printf("Server: Received \"%s\" survey response\n", string(msg))
 		}
 		time.Sleep(time.Second * 3)
 	}
 }
 
-func updateWeights(nWeight) {
+func updateWeights(nWeight string) {
 	var cmd string
-	var sokconfig string
+	var sockconfig string
 	sockconfig = "/etc/haproxy/haproxy.sock"
 	s := []string{"set", "weight", "nodes/web1", nWeight}
-	cmd = fmt.Printf(strings.Join(s, " "))
+	cmd = "'" + strings.Join(s, " ") + "'"
 
 	var finalCMD string
+
 	str := []string{"echo", cmd, "|", "socat", "stdio", sockconfig}
 
-	finalCMD = fmt.Printf(strings.Join(str, " "))
+	finalCMD = strings.Join(str, " ")
 
 	fmt.Println("command is ", cmd)
 
-	out, err := exec.Command(finalCMD).Output()v
+	out, err := exec.Command("sh", "-c", finalCMD).Output()
 	if err != nil {
-		fmt.Printf("%s", err)
+		fmt.Printf("ERR: %s/n", err)
 	}
-	fmt.Printf("%s", out)
-	wg.Done() // Need to signal to waitgroup that this goroutine is done
+	fmt.Printf("OUT: %s/n", out)
 }
 func main() {
 	host := flag.String("host", "0.0.0.0:8000", "the IP address and port")

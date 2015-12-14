@@ -26,9 +26,9 @@ func main() {
 	} else if *configTemplate == "" {
 		utils.Die("Missing -template flag")
 	} else if *configFile == "" {
-		utils.Die("Missing -file flag")
+		utils.Die("Missing -config flag")
 	} else if *digitalOceanToken == "" {
-		utils.Die("Missing -file flag")
+		utils.Die("Missing -token flag")
 	} else if *minNodes <= 0 {
 		utils.Die("The -min must be non-negative")
 	} else if *maxNodes <= 0 {

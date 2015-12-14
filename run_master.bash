@@ -4,6 +4,7 @@ set -ex
 PROG="autoscaler-master"
 addr=$1
 cmd=$2
+token=$3
 
 if [ -z "${addr}" ] ; then
 	echo "Usage: run_master.bash [HOST:PORT]"
@@ -22,4 +23,4 @@ trap cleanup EXIT
 
 go build -o ${PROG} ./autoscaler
 
-./${PROG} -host ${addr} -command "${cmd}" -template "x" -config "y" -overloaded 0.15 -underused 0.1 -min 1 -max 1
+./${PROG} -host ${addr} -command "${cmd}" -template "x" -config "y" -overloaded 0.15 -underused 0.1 -min 1 -max 1 -token "${token}"

@@ -3,9 +3,11 @@ package master
 import (
 	"fmt"
 	"net/url"
+	"os"
 	"os/exec"
 	"strconv"
 	"strings"
+	"text/template"
 	"time"
 
 	"github.com/jstol/digital-ocean-autoscaler/utils"
@@ -31,15 +33,19 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 
 // Master type
 type master struct {
-	url                                           url.URL
-	command, configTemplate, configFile           string
-	overloadedCpuThreshold, underusedCpuThreshold float64
-	minNodes, maxNodes                            int64
-	token                                         *TokenSource
-	doClient                                      *godo.Client
+	url                                               url.URL
+	workerConfig                                      *WorkerConfig
+	droplets                                          []godo.Droplet
+	command, balanceConfigTemplate, balanceConfigFile string
+	overloadedCpuThreshold, underusedCpuThreshold     float64
+	minWorkers, maxWorkers, workerCount               int64
+	waitingOnWorkerChange, coolingDown                bool
+	token                                             *TokenSource
+	doClient                                          *godo.Client
 }
 
-func NewMaster(host, command, configTemplate, configFile, digitalOceanToken string, overloadedCpuThreshold, underusedCpuThreshold float64, minNodes, maxNodes int64) *master {
+func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken string, overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64) *master {
+	var err error
 	bindUrl := url.URL{Scheme: "tcp", Host: host}
 
 	// Set up the Digital Ocean client
@@ -49,21 +55,47 @@ func NewMaster(host, command, configTemplate, configFile, digitalOceanToken stri
 	oauthClient := oauth2.NewClient(oauth2.NoContext, tokenSource)
 	client := godo.NewClient(oauthClient)
 
+	// Create a set containing the configured worker nodes
+	workerSet := make(map[string]interface{})
+	for _, name := range workerConfig.DropletNames {
+		workerSet[name] = nil
+	}
+
+	// Get a list of all of the droplets and filter out any irrelevant ones
+	var workerDroplets, allDroplets []godo.Droplet
+	if allDroplets, _, err = client.Droplets.List(nil); err != nil {
+		utils.Die("Error getting the list of droplets: %s", err)
+	}
+
+	for _, droplet := range allDroplets {
+		if _, contains := workerSet[droplet.Name]; contains {
+			workerDroplets = append(workerDroplets, droplet)
+		}
+	}
+
 	return &master{
 		url:                    bindUrl,
+		workerConfig:           workerConfig,
+		droplets:               workerDroplets,
 		command:                command,
-		configTemplate:         configTemplate,
-		configFile:             configFile,
+		balanceConfigTemplate:  balanceConfigTemplate,
+		balanceConfigFile:      balanceConfigFile,
 		overloadedCpuThreshold: overloadedCpuThreshold,
 		underusedCpuThreshold:  underusedCpuThreshold,
-		minNodes:               minNodes,
-		maxNodes:               maxNodes,
+		minWorkers:             minWorkers,
+		maxWorkers:             maxWorkers,
 		token:                  tokenSource,
 		doClient:               client,
 	}
 }
 
-func (m master) querySlaves(c chan<- []float64) {
+func (m *master) cooldown() {
+	m.coolingDown = true
+	time.Sleep(time.Second * 30)
+	m.coolingDown = false
+}
+
+func (m *master) querySlaves(c chan<- float64) {
 	var err error
 	var msg []byte
 	var sock mangos.Socket
@@ -109,76 +141,161 @@ func (m master) querySlaves(c chan<- []float64) {
 			loadAvgs = append(loadAvgs, loadAvg)
 		}
 
-		// Make scaling decision
-		if m.shouldAddNode(loadAvgs) {
-			fmt.Println("Threshold met.")
-			var out []byte
-			if out, err = exec.Command("sh", "-c", m.command).Output(); err != nil {
-				utils.Die("Error executing reload command: %s", err.Error())
-			}
-			fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
-		} else {
-			fmt.Println("No extra node needed")
+		// Compute the average loadAvg
+		var loadAvg float64
+		for _, avg := range loadAvgs {
+			loadAvg += avg
 		}
+		loadAvg /= float64(len(loadAvgs))
 
 		// Send the load averages
-		c <- loadAvgs
+		c <- loadAvg
 
 		// Wait
 		time.Sleep(time.Second * 3)
 	}
 }
 
-func (m master) shouldAddNode(loadAvgs []float64) bool {
-	var avg float64
-	for _, loadAvg := range loadAvgs {
-		avg += loadAvg
+func (m *master) shouldAddWorker(loadAvg float64) bool {
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && m.workerCount < m.maxWorkers
+}
+
+func (m *master) addWorker(c chan<- *godo.Droplet) {
+	var (
+		droplet *godo.Droplet
+		err     error
+	)
+
+	// TODO find a better way to dynamically name the workers, create using a snapshot
+	name := fmt.Sprintf("%s%d", m.workerConfig.NamePrefix, len(m.droplets)+1)
+	createRequest := &godo.DropletCreateRequest{
+		Name:              name,
+		Region:            "tor1",
+		Size:              "512mb",
+		PrivateNetworking: true,
+		Image: godo.DropletCreateImage{
+			Slug: "ubuntu-14-04-x64",
+		},
 	}
-	avg = avg / float64(len(loadAvgs))
 
-	return avg > m.overloadedCpuThreshold
-}
+	if droplet, _, err = m.doClient.Droplets.Create(createRequest); err != nil {
+		utils.Die("Couldn't create droplet: %s\n", err.Error())
+	}
 
-func (m master) addNode() error {
-	// createRequest := &godo.DropletCreateRequest{
-	// 	Name:   dropletName,
-	// 	Region: "tor1",
-	// 	Size:   "512mb",
-	// 	Image: godo.DropletCreateImage{
-	// 		Slug: "ubuntu-14-04-x64",
-	// 	},
-	// }
-
-	// // TODO do something with the droplet
-	// newDroplet, _, err := client.Droplets.Create(createRequest)
-
-	// if err != nil {
-	// 	utils.Die("Couldn't create droplet: %s\n", err.Error())
-	// }
-	return nil
-}
-
-func (m master) shouldRemoveNode(loadAvg float64) bool {
-	return loadAvg < m.underusedCpuThreshold
-}
-
-func (m master) MonitorNodes() {
-	// var err error
-
-	// Send out survey requests indefinitely
-	loadAvgsChannel := make(chan []float64)
-	// dropletPollChannel := make
-
-	// Start worker threads
-	go m.querySlaves(loadAvgsChannel)
-
+	m.workerCount++
 	for {
-		select {
-		case loadAvgs := <-loadAvgsChannel:
-			fmt.Printf("GOT LOADAVGS %d\n", len(loadAvgs))
-			for _, element := range loadAvgs {
-				fmt.Println(element)
+		time.Sleep(time.Second * 3)
+		if droplet, _, _ = m.doClient.Droplets.Get(droplet.ID); droplet.Status == "active" {
+			break
+		}
+
+		fmt.Printf("Polling. Status: %s\n", droplet.Status)
+	}
+
+	fmt.Println("Droplet creation complete")
+
+	c <- droplet
+}
+
+func (m *master) shouldRemoveWorker(loadAvg float64) bool {
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && m.workerCount > m.minWorkers
+}
+
+func (m *master) removeWorker(c chan<- bool) {
+	// TODO implement logic to remove a worker
+	c <- true
+}
+
+func (m *master) writeAddresses() {
+	var (
+		file *os.File
+		temp *template.Template
+		ips  []string
+		err  error
+	)
+
+	if temp, err = template.ParseFiles(m.balanceConfigTemplate); err != nil {
+		utils.Die("Error reading in template: %s", err.Error())
+	}
+	if file, err = os.OpenFile(m.balanceConfigFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, os.ModePerm); err != nil {
+		utils.Die("Error opening load balancer config file: %s", err.Error())
+	}
+
+	// Get the IP addresses together
+	for _, droplet := range m.droplets {
+		for _, addr := range droplet.Networks.V4 {
+			if addr.Type == "public" {
+				ips = append(ips, addr.IPAddress)
+				break
 			}
 		}
 	}
+
+	// Write changes out to the template file
+	if err = temp.Execute(file, ips); err != nil {
+		utils.Die("Error writing template out to the file: %s", err.Error())
+	}
+}
+
+func (m *master) MonitorWorkers() {
+	var err error
+
+	// Send out survey requests indefinitely
+	workerQuery := make(chan float64)
+	dropletCreatePoll := make(chan *godo.Droplet)
+	dropletDestroyPoll := make(chan bool)
+
+	// Start querying the worker threads
+	go m.querySlaves(workerQuery)
+
+	for {
+		select {
+		case loadAvg := <-workerQuery:
+			fmt.Printf("Load avg: %f\n", loadAvg)
+			// Make scaling decision
+			if m.shouldAddWorker(loadAvg) {
+				fmt.Println("Max threshold met")
+				m.waitingOnWorkerChange = true
+				go m.addWorker(dropletCreatePoll)
+			} else if m.shouldRemoveWorker(loadAvg) {
+				fmt.Println("Min threshold met")
+				m.waitingOnWorkerChange = true
+				go m.removeWorker(dropletDestroyPoll)
+			}
+
+		case newDroplet := <-dropletCreatePoll:
+			go m.cooldown()
+			m.waitingOnWorkerChange = false
+
+			// Add the new droplet to the list
+			m.droplets = append(m.droplets, *newDroplet)
+
+			// Get the private IP address
+			privateAddr := ""
+			for _, addr := range newDroplet.Networks.V4 {
+				if addr.Type == "private" {
+					privateAddr = addr.IPAddress
+				}
+			}
+
+			if privateAddr == "" {
+				utils.Die("No private IP address detected in %s", newDroplet.Name)
+			}
+
+			// Write it to the config file
+			m.writeAddresses()
+
+			// Execute the "reload" command
+			var out []byte
+			if out, err = exec.Command("sh", "-c", m.command).Output(); err != nil {
+				utils.Die("Error executing 'reload' command: %s", err.Error())
+			}
+			fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
+		}
+	}
+}
+
+type WorkerConfig struct {
+	NamePrefix   string   `json:"namePrefix"`
+	DropletNames []string `json:"dropletNames"`
 }

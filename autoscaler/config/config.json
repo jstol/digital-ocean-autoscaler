@@ -1,0 +1,6 @@
+{
+	"namePrefix": "web",
+	"dropletNames": [
+		"web1"
+	]
+}

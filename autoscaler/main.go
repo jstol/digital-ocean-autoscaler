@@ -13,10 +13,11 @@ func main() {
 	command := flag.String("command", "", "the command to run after writing out the load balancer's new configuration file")
 	configTemplate := flag.String("template", "", "the load balancer config file template to use")
 	configFile := flag.String("config", "", "the load balancer config file to write to")
+	digitalOceanToken := flag.String("token", "", "the Digital Ocean API token to use")
 	overloadedCpuThreshold := flag.Float64("overloaded", 0.7, "the average CPU usage threshold after which the nodes are considered overloaded")
 	underusedCpuThreshold := flag.Float64("underused", 0.3, "the CPU usage threshold to consider a node as underutilized")
 	minNodes := flag.Int64("min", 1, "the minimum number of nodes to have")
-	maxNodes := flag.Int64("max", -1, "the minimum number of nodes to have")
+	maxNodes := flag.Int64("max", 10, "the minimum number of nodes to have")
 	flag.Parse()
 
 	// Handle checking command line arguments
@@ -25,6 +26,8 @@ func main() {
 	} else if *configTemplate == "" {
 		utils.Die("Missing -template flag")
 	} else if *configFile == "" {
+		utils.Die("Missing -file flag")
+	} else if *digitalOceanToken == "" {
 		utils.Die("Missing -file flag")
 	} else if *minNodes <= 0 {
 		utils.Die("The -min must be non-negative")
@@ -35,6 +38,6 @@ func main() {
 	}
 
 	fmt.Printf("Starting master at %s\n", *host)
-	monitor := master.NewMaster(*host, *command, *configTemplate, *configFile, *overloadedCpuThreshold, *underusedCpuThreshold, *minNodes, *maxNodes)
+	monitor := master.NewMaster(*host, *command, *configTemplate, *configFile, *digitalOceanToken, *overloadedCpuThreshold, *underusedCpuThreshold, *minNodes, *maxNodes)
 	monitor.MonitorNodes()
 }

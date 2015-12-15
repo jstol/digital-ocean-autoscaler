@@ -211,7 +211,6 @@ func (m *master) writeAddresses() {
 	var (
 		file *os.File
 		temp *template.Template
-		ips  []string
 		err  error
 	)
 
@@ -223,10 +222,11 @@ func (m *master) writeAddresses() {
 	}
 
 	// Get the IP addresses together
+	ips := make(map[string]string)
 	for _, droplet := range m.droplets {
 		for _, addr := range droplet.Networks.V4 {
 			if addr.Type == "public" {
-				ips = append(ips, addr.IPAddress)
+				ips[droplet.Name] = addr.IPAddress
 				break
 			}
 		}

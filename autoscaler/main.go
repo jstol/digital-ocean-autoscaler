@@ -17,6 +17,7 @@ func main() {
 	balanceConfigFile := flag.String("balanceconfig", "", "the load balancer config file to write to")
 	workerConfigFile := flag.String("workerconfig", "", "the worker config file (JSON) to read from")
 	digitalOceanToken := flag.String("token", "", "the Digital Ocean API token to use")
+	digitalOceanImageSlug := flag.String("image", "", "the slug of the iamge to use when creating worker nodes")
 	overloadedCpuThreshold := flag.Float64("overloaded", 0.7, "the average CPU usage threshold after which the nodes are considered overloaded")
 	underusedCpuThreshold := flag.Float64("underused", 0.3, "the CPU usage threshold to consider a node as underutilized")
 	minWorkers := flag.Int64("min", 1, "the minimum number of workers to have")
@@ -34,6 +35,8 @@ func main() {
 		utils.Die("Missing -workerconfig flag")
 	} else if *digitalOceanToken == "" {
 		utils.Die("Missing -token flag")
+	} else if *digitalOceanImageSlug == "" {
+		utils.Die("Missing -image flag")
 	} else if *minWorkers <= 0 {
 		utils.Die("The -min must be non-negative")
 	} else if *maxWorkers <= 0 {
@@ -60,7 +63,7 @@ func main() {
 		&workerConfig,
 		*command,
 		*balanceConfigTemplate, *balanceConfigFile,
-		*digitalOceanToken,
+		*digitalOceanToken, *digitalOceanImageSlug,
 		*overloadedCpuThreshold, *underusedCpuThreshold,
 		*minWorkers, *maxWorkers,
 	)

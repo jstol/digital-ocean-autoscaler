@@ -33,18 +33,18 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 
 // Master type
 type master struct {
-	url                                               url.URL
-	workerConfig                                      *WorkerConfig
-	droplets                                          []godo.Droplet
-	command, balanceConfigTemplate, balanceConfigFile string
-	overloadedCpuThreshold, underusedCpuThreshold     float64
-	minWorkers, maxWorkers, workerCount               int64
-	waitingOnWorkerChange, coolingDown                bool
-	token                                             *TokenSource
-	doClient                                          *godo.Client
+	url                                                          url.URL
+	workerConfig                                                 *WorkerConfig
+	droplets                                                     []godo.Droplet
+	command, balanceConfigTemplate, balanceConfigFile, imageSlug string
+	overloadedCpuThreshold, underusedCpuThreshold                float64
+	minWorkers, maxWorkers, workerCount                          int64
+	waitingOnWorkerChange, coolingDown                           bool
+	token                                                        *TokenSource
+	doClient                                                     *godo.Client
 }
 
-func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken string, overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64) *master {
+func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageSlug string, overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64) *master {
 	var err error
 	bindUrl := url.URL{Scheme: "tcp", Host: host}
 
@@ -85,6 +85,7 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 		minWorkers:             minWorkers,
 		maxWorkers:             maxWorkers,
 		token:                  tokenSource,
+		imageSlug:              digitalOceanImageSlug,
 		doClient:               client,
 	}
 }
@@ -174,7 +175,7 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 		Size:              "512mb",
 		PrivateNetworking: true,
 		Image: godo.DropletCreateImage{
-			Slug: "ubuntu-14-04-x64",
+			Slug: m.imageSlug,
 		},
 	}
 
@@ -202,7 +203,7 @@ func (m *master) shouldRemoveWorker(loadAvg float64) bool {
 }
 
 func (m *master) removeWorker(c chan<- bool) {
-	// TODO implement logic to remove a worker
+	// TODO implement logic to remove a worker only after all requests have been processed
 	c <- true
 }
 

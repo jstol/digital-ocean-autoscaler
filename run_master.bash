@@ -4,15 +4,11 @@ set -ex
 PROG="autoscaler-master"
 addr=$1
 token=$2
+slug=$3
 
-if [ -z "${addr}" ] ; then
-	echo "Usage: run_master.bash [HOST:PORT]"
+if [ -z "${addr}" ] || [ -z "${token}" ] || [ -z "${slug}" ] ; then
+	echo "Usage: run_master.bash [HOST:PORT] [TOKEN] [IMAGE SLUG]"
 	exit
-fi
-
-if [ -z "${cmd}" ] ; then
-	# cmd="service haproxy reload"
-	cmd="echo ADDED NODE"
 fi
 
 cleanup() {
@@ -29,4 +25,4 @@ go build -o ${PROG} ./autoscaler
 	-balanceconfig "test-config.txt" \
 	-workerconfig "autoscaler/config/config.json"
 	-overloaded 0.15 -underused 0.1 \
-	-min 1 -max 1
+	-min 1 -max 3

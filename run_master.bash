@@ -18,8 +18,7 @@ trap cleanup EXIT
 
 go build -o ${PROG} ./autoscaler
 
-./${PROG} -host ${addr} \
-	-token "${token}" \
+./${PROG} -host ${addr} -token "${token}" -image "${slug}" \
 	-command "service haproxy reload" \
 	-balancetemplate "autoscaler/example-template.txt" \
 	-balanceconfig "test-config.txt" \

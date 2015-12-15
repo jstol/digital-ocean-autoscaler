@@ -212,6 +212,7 @@ func (m *master) removeWorker(c chan<- bool) {
 	}
 
 	m.droplets = m.droplets[0 : len(m.droplets)-1]
+	m.workerCount--
 
 	c <- true
 }

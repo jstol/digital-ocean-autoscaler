@@ -203,7 +203,14 @@ func (m *master) shouldRemoveWorker(loadAvg float64) bool {
 }
 
 func (m *master) removeWorker(c chan<- bool) {
-	// TODO implement logic to remove a worker only after all requests have been processed
+	// TODO implement logic to remove a worker only after all requests have finished processing
+
+	// Delete the last droplet
+	toDelete := m.droplets[len(m.droplets)-1]
+	if _, err := m.doClient.Droplets.Delete(toDelete.ID); err != nil {
+		utils.Die("Error deleting droplet: %s", err.Error())
+	}
+
 	c <- true
 }
 
@@ -238,13 +245,23 @@ func (m *master) writeAddresses() {
 	}
 }
 
-func (m *master) MonitorWorkers() {
-	var err error
+func (m *master) reload() {
+	var (
+		out []byte
+		err error
+	)
 
+	if out, err = exec.Command("sh", "-c", m.command).Output(); err != nil {
+		utils.Die("Error executing 'reload' command: %s", err.Error())
+	}
+	fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
+}
+
+func (m *master) MonitorWorkers() {
 	// Send out survey requests indefinitely
 	workerQuery := make(chan float64)
 	dropletCreatePoll := make(chan *godo.Droplet)
-	dropletDestroyPoll := make(chan bool)
+	dropletDeletePoll := make(chan bool)
 
 	// Start querying the worker threads
 	go m.querySlaves(workerQuery)
@@ -261,7 +278,7 @@ func (m *master) MonitorWorkers() {
 			} else if m.shouldRemoveWorker(loadAvg) {
 				fmt.Println("Min threshold met")
 				m.waitingOnWorkerChange = true
-				go m.removeWorker(dropletDestroyPoll)
+				go m.removeWorker(dropletDeletePoll)
 			}
 
 		case newDroplet := <-dropletCreatePoll:
@@ -271,27 +288,16 @@ func (m *master) MonitorWorkers() {
 			// Add the new droplet to the list
 			m.droplets = append(m.droplets, *newDroplet)
 
-			// Get the private IP address
-			privateAddr := ""
-			for _, addr := range newDroplet.Networks.V4 {
-				if addr.Type == "private" {
-					privateAddr = addr.IPAddress
-				}
-			}
-
-			if privateAddr == "" {
-				utils.Die("No private IP address detected in %s", newDroplet.Name)
-			}
-
-			// Write it to the config file
+			// Write it to the config file and execute the "reload" command
 			m.writeAddresses()
+			m.reload()
 
-			// Execute the "reload" command
-			var out []byte
-			if out, err = exec.Command("sh", "-c", m.command).Output(); err != nil {
-				utils.Die("Error executing 'reload' command: %s", err.Error())
-			}
-			fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
+		case <-dropletDeletePoll:
+			go m.cooldown()
+			m.waitingOnWorkerChange = false
+			m.writeAddresses()
+			m.reload()
+
 		}
 	}
 }

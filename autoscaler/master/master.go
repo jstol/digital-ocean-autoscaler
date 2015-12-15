@@ -158,7 +158,7 @@ func (m *master) querySlaves(c chan<- float64) {
 }
 
 func (m *master) shouldAddWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && len(m.droplets) < m.maxWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && int64(len(m.droplets)) < m.maxWorkers
 }
 
 func (m *master) addWorker(c chan<- *godo.Droplet) {
@@ -198,7 +198,7 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 }
 
 func (m *master) shouldRemoveWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && len(m.droplets) > m.minWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && int64(len(m.droplets)) > m.minWorkers
 }
 
 func (m *master) removeWorker(c chan<- bool) {

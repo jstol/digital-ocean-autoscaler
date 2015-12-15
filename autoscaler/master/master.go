@@ -158,7 +158,7 @@ func (m *master) querySlaves(c chan<- float64) {
 }
 
 func (m *master) shouldAddWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && m.workerCount < m.maxWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && len(m.droplets) < m.maxWorkers
 }
 
 func (m *master) addWorker(c chan<- *godo.Droplet) {
@@ -183,7 +183,6 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 		utils.Die("Couldn't create droplet: %s\n", err.Error())
 	}
 
-	m.workerCount++
 	for {
 		time.Sleep(time.Second * 3)
 		if droplet, _, _ = m.doClient.Droplets.Get(droplet.ID); droplet.Status == "active" {
@@ -199,7 +198,7 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 }
 
 func (m *master) shouldRemoveWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && m.workerCount > m.minWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && len(m.droplets) > m.minWorkers
 }
 
 func (m *master) removeWorker(c chan<- bool) {
@@ -212,7 +211,6 @@ func (m *master) removeWorker(c chan<- bool) {
 	}
 
 	m.droplets = m.droplets[0 : len(m.droplets)-1]
-	m.workerCount--
 
 	c <- true
 }

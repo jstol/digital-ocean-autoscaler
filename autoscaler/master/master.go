@@ -211,6 +211,8 @@ func (m *master) removeWorker(c chan<- bool) {
 		utils.Die("Error deleting droplet: %s", err.Error())
 	}
 
+	m.droplets = m.droplets[0 : len(m.droplets)-1]
+
 	c <- true
 }
 

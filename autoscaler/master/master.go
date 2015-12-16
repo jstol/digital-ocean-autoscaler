@@ -303,7 +303,7 @@ func (m *Master) removeWorker(c chan<- bool) {
 	c <- true
 }
 
-func (m *Master) writeAddresses() {
+func (m *Master) writeConfigFile() {
 	var (
 		file *os.File
 		temp *template.Template
@@ -405,6 +405,8 @@ func (m *Master) MonitorWorkers() {
 	dropletCreatePoll := make(chan *godo.Droplet)
 	dropletDeletePoll := make(chan bool)
 
+	// Write an initial config file
+	m.writeConfigFile()
 	// Start querying the worker threads
 	go m.queryWorkers(workerQuery)
 	// Start the goroutine to update weights
@@ -440,13 +442,13 @@ func (m *Master) MonitorWorkers() {
 			m.workers = append(m.workers, newWorker(newDroplet))
 
 			// Write it to the config file and execute the "reload" command
-			m.writeAddresses()
+			m.writeConfigFile()
 			m.reload()
 
 		case <-dropletDeletePoll:
 			go m.cooldown()
 			m.waitingOnWorkerChange = false
-			m.writeAddresses()
+			m.writeConfigFile()
 			m.reload()
 
 		}

@@ -319,8 +319,8 @@ func (m *Master) writeAddresses() {
 
 	// Get the IP addresses together
 	type haproxyInfo struct {
-		addr   string
-		weight int64
+		Addr   string
+		Weight int64
 	}
 	ips := make(map[string]haproxyInfo)
 	for _, worker := range m.workers {

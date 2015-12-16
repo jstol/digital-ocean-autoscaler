@@ -146,7 +146,7 @@ func (m *Master) queryWorkers(c chan<- float64) {
 	if err = sock.SetOption(mangos.OptionSurveyTime, m.surveyDeadline); err != nil {
 		utils.Die("SetOption(mangos.OptionSurveyTime): %s", err.Error())
 	}
-	if err = sock.SetOption(mangos.OptionRecvDeadline, (m.surveyDeadline+1)*time.Second); err != nil {
+	if err = sock.SetOption(mangos.OptionRecvDeadline, m.surveyDeadline+(1*time.Second)); err != nil {
 		utils.Die("SetOption(mangos.OptionRecvDeadline): %s", err.Error())
 	}
 

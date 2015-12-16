@@ -407,6 +407,7 @@ func (m *Master) MonitorWorkers() {
 
 	// Write an initial config file
 	m.writeConfigFile()
+	m.reload()
 	// Start querying the worker threads
 	go m.queryWorkers(workerQuery)
 	// Start the goroutine to update weights

@@ -198,6 +198,10 @@ func (m *Master) queryWorkers(c chan<- float64) {
 				break
 			}
 			parts := strings.Split(string(msg), ",")
+			if len(parts != 2) {
+				continue
+			}
+
 			ip := parts[0]
 			loadAvgString := parts[1]
 

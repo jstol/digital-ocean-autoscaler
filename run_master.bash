@@ -23,6 +23,6 @@ go build -o ${PROG} ./autoscaler
 	-balancetemplate "/root/autoscaler-template.cfg" \
 	-balanceconfig "/etc/haproxy/haproxy.cfg" \
 	-workerconfig "autoscaler/config/config.json" \
-	-overloaded 0.3 -underused 0.1 \
-	-min 1 -max 3 \
+	-overloaded 0.7 -underused 0.3 \
+	-min 1 -max 10
 	-statsdaddr "localhost:8125"

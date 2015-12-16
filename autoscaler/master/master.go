@@ -290,10 +290,12 @@ func (m *Master) reload() {
 }
 
 func (m *Master) streamStats() {
-	m.statsdClientBuffer.FGauge("loadavg", m.currentLoadAvg)
-	m.statsdClientBuffer.Gauge("workers", int64(len(m.droplets)))
-	fmt.Println("Streamed to statsd")
-	time.Sleep(time.Second * 5)
+	for {
+		m.statsdClientBuffer.FGauge("loadavg", m.currentLoadAvg)
+		m.statsdClientBuffer.Gauge("workers", int64(len(m.droplets)))
+		fmt.Println("Streamed to statsd")
+		time.Sleep(time.Second * 5)
+	}
 }
 
 func (m *Master) MonitorWorkers() {

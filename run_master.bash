@@ -25,4 +25,4 @@ go build -o ${PROG} ./autoscaler
 	-workerconfig "autoscaler/config/config.json" \
 	-overloaded 0.7 -underused 0.3 \
 	-min 1 -max 10
-	-statsdaddr "localhost:8125"
+	-statsd true -statsdaddr "localhost:8125"

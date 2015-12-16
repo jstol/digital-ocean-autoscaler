@@ -314,6 +314,7 @@ func (m *Master) MonitorWorkers() {
 		select {
 		case loadAvg := <-workerQuery:
 			fmt.Printf("Load avg: %f\n", loadAvg)
+			m.currentLoadAvg = loadAvg
 
 			// Make scaling decision
 			if m.shouldAddWorker(loadAvg) {

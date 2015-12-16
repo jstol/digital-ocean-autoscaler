@@ -3,6 +3,7 @@ package main
 import (
 	"flag"
 	"fmt"
+	"net"
 	"net/url"
 
 	"github.com/jstol/digital-ocean-autoscaler/utils"
@@ -14,11 +15,35 @@ import (
 	"github.com/shirou/gopsutil/load"
 )
 
+func getPrivateIP() string {
+	i, err := net.InterfaceByName("eth1")
+	if err != nil {
+		utils.Die("Error getting interface eth1: %s\n", err.Error())
+	}
+
+	addrs, err := i.Addrs()
+	if err != nil {
+		utils.Die("Error getting interface eth1 addresses: %s\n", err.Error())
+	}
+
+	var ip string
+	for _, a := range addrs {
+		if ipnet, ok := a.(*net.IPNet); ok && !ipnet.IP.IsLoopback() {
+			if ipnet.IP.To4() != nil {
+				ip = ipnet.IP.String()
+				break
+			}
+		}
+	}
+	return ip
+}
+
 func startNode(masterHost, name string) {
 	var sock mangos.Socket
 	var err error
 	var msg []byte
 	masterUrl := url.URL{Scheme: "tcp", Host: masterHost}
+	ip := getPrivateIP()
 
 	// Try to get new "respondent" socket
 	if sock, err = respondent.NewSocket(); err != nil {
@@ -63,7 +88,7 @@ func startNode(masterHost, name string) {
 		avg = avg / float64(cores)
 
 		fmt.Printf("Client(%s): Sending survey response\n", name)
-		if err = sock.Send([]byte(fmt.Sprintf("%f", avg))); err != nil {
+		if err = sock.Send([]byte(fmt.Sprintf("%s,%f", ip, avg))); err != nil {
 			utils.Die("Cannot send: %s", err.Error())
 		}
 	}

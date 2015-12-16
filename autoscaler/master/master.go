@@ -2,6 +2,7 @@ package master
 
 import (
 	"fmt"
+	"math"
 	"net/url"
 	"os"
 	"os/exec"
@@ -123,7 +124,7 @@ func (m *Master) cooldown() {
 	m.coolingDown = false
 }
 
-func (m *Master) querySlaves(c chan<- float64) {
+func (m *Master) queryWorkers(c chan<- float64) {
 	var err error
 	var msg []byte
 	var sock mangos.Socket
@@ -178,7 +179,9 @@ func (m *Master) querySlaves(c chan<- float64) {
 		loadAvg /= float64(len(loadAvgs))
 
 		// Send the load averages
-		c <- loadAvg
+		if !math.IsNaN(loadAvg) {
+			c <- loadAvg
+		}
 
 		// Wait
 		time.Sleep(m.queryInterval)
@@ -293,7 +296,7 @@ func (m *Master) MonitorWorkers() {
 	dropletDeletePoll := make(chan bool)
 
 	// Start querying the worker threads
-	go m.querySlaves(workerQuery)
+	go m.queryWorkers(workerQuery)
 
 	for {
 		select {

@@ -39,7 +39,7 @@ type Master struct {
 	workerConfig                                                  *WorkerConfig
 	droplets                                                      []godo.Droplet
 	command, balanceConfigTemplate, balanceConfigFile, imageID    string
-	overloadedCpuThreshold, underusedCpuThreshold                 float64
+	currentLoadAvg, overloadedCpuThreshold, underusedCpuThreshold float64
 	minWorkers, maxWorkers, workerCount                           int64
 	waitingOnWorkerChange, coolingDown                            bool
 	token                                                         *TokenSource
@@ -289,6 +289,13 @@ func (m *Master) reload() {
 	fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
 }
 
+func (m *Master) streamStats() {
+	m.statsdClientBuffer.FGauge("loadavg", m.currentLoadAvg)
+	m.statsdClientBuffer.Gauge("workers", len(m.droplets))
+	fmt.Println("Streamed to statsd")
+	time.Sleep(time.Second * 5)
+}
+
 func (m *Master) MonitorWorkers() {
 	// Send out survey requests indefinitely
 	workerQuery := make(chan float64)
@@ -298,13 +305,15 @@ func (m *Master) MonitorWorkers() {
 	// Start querying the worker threads
 	go m.queryWorkers(workerQuery)
 
+	// Start streaming stats if needed
+	if m.statsdClientBuffer != nil {
+		go m.streamStats()
+	}
+
 	for {
 		select {
 		case loadAvg := <-workerQuery:
 			fmt.Printf("Load avg: %f\n", loadAvg)
-			if m.statsdClientBuffer != nil {
-				m.statsdClientBuffer.FGauge("loadavg", loadAvg)
-			}
 
 			// Make scaling decision
 			if m.shouldAddWorker(loadAvg) {
@@ -321,10 +330,6 @@ func (m *Master) MonitorWorkers() {
 			go m.cooldown()
 			m.waitingOnWorkerChange = false
 
-			if m.statsdClientBuffer != nil {
-				m.statsdClientBuffer.Incr("workers", 1)
-			}
-
 			// Add the new droplet to the list
 			m.droplets = append(m.droplets, *newDroplet)
 
@@ -335,11 +340,6 @@ func (m *Master) MonitorWorkers() {
 		case <-dropletDeletePoll:
 			go m.cooldown()
 			m.waitingOnWorkerChange = false
-
-			if m.statsdClientBuffer != nil {
-				m.statsdClientBuffer.Incr("workers", -1)
-			}
-
 			m.writeAddresses()
 			m.reload()
 

@@ -358,7 +358,10 @@ func (m *Master) streamStats() {
 }
 
 func (m *Master) updateWeights() {
+	fmt.Println("Updating weights...")
 	for {
+		time.Sleep(time.Minute * 1)
+
 		var cmd string
 		var sockconfig string
 		sockconfig = "/etc/haproxy/haproxy.sock"
@@ -388,14 +391,11 @@ func (m *Master) updateWeights() {
 			finalCMD = strings.Join(str, " ")
 
 			// Execute the command
-			fmt.Println("Updating weights...")
 			_, err := exec.Command("sh", "-c", finalCMD).Output()
 			if err != nil {
 				fmt.Printf("Error writing weight to socket: %s\n", err.Error())
 			}
 		}
-
-		time.Sleep(time.Minute * 1)
 	}
 }
 

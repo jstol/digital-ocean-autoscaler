@@ -71,7 +71,7 @@ func main() {
 	fmt.Printf("Starting master at %s\n", *host)
 	var monitor *master.Master
 
-	if *streamStatsd {
+	if !*streamStatsd {
 		monitor = master.NewMaster(
 			*host,
 			&workerConfig,

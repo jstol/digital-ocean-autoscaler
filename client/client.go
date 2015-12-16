@@ -24,6 +24,7 @@ func startNode(masterHost, name string) {
 	if sock, err = respondent.NewSocket(); err != nil {
 		utils.Die("Can't get new respondent socket: %s", err.Error())
 	}
+	defer sock.Close()
 
 	sock.AddTransport(tcp.NewTransport())
 

@@ -105,6 +105,7 @@ func (m *master) querySlaves(c chan<- float64) {
 	if sock, err = surveyor.NewSocket(); err != nil {
 		utils.Die("Can't get new surveyor socket: %s", err)
 	}
+	defer sock.Close()
 
 	sock.AddTransport(tcp.NewTransport())
 

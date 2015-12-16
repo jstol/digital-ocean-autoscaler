@@ -24,4 +24,5 @@ go build -o ${PROG} ./autoscaler
 	-balanceconfig "/etc/haproxy/haproxy.cfg" \
 	-workerconfig "autoscaler/config/config.json" \
 	-overloaded 0.3 -underused 0.1 \
-	-min 1 -max 3
+	-min 1 -max 3 \
+	-statsdaddr "localhost:8125"

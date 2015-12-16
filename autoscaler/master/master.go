@@ -16,6 +16,7 @@ import (
 	"github.com/gdamore/mangos"
 	"github.com/gdamore/mangos/protocol/surveyor"
 	"github.com/gdamore/mangos/transport/tcp"
+	"github.com/quipo/statsd"
 	"golang.org/x/oauth2"
 )
 
@@ -32,19 +33,23 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 }
 
 // Master type
-type master struct {
-	url                                                          url.URL
-	workerConfig                                                 *WorkerConfig
-	droplets                                                     []godo.Droplet
-	command, balanceConfigTemplate, balanceConfigFile, imageSlug string
-	overloadedCpuThreshold, underusedCpuThreshold                float64
-	minWorkers, maxWorkers, workerCount                          int64
-	waitingOnWorkerChange, coolingDown                           bool
-	token                                                        *TokenSource
-	doClient                                                     *godo.Client
+type Master struct {
+	url                                                           url.URL
+	workerConfig                                                  *WorkerConfig
+	droplets                                                      []godo.Droplet
+	command, balanceConfigTemplate, balanceConfigFile, imageID    string
+	overloadedCpuThreshold, underusedCpuThreshold                 float64
+	minWorkers, maxWorkers, workerCount                           int64
+	waitingOnWorkerChange, coolingDown                            bool
+	token                                                         *TokenSource
+	doClient                                                      *godo.Client
+	pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration
+	statsdClientBuffer                                            *statsd.StatsdBuffer
 }
 
-func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageSlug string, overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64) *master {
+func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageID string,
+	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration) *Master {
+
 	var err error
 	bindUrl := url.URL{Scheme: "tcp", Host: host}
 
@@ -73,7 +78,7 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 		}
 	}
 
-	return &master{
+	return &Master{
 		url:                    bindUrl,
 		workerConfig:           workerConfig,
 		droplets:               workerDroplets,
@@ -85,18 +90,40 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 		minWorkers:             minWorkers,
 		maxWorkers:             maxWorkers,
 		token:                  tokenSource,
-		imageSlug:              digitalOceanImageSlug,
+		imageID:                digitalOceanImageID,
 		doClient:               client,
+		pollInterval:           pollInterval,
+		cooldownInterval:       cooldownInterval,
+		surveyDeadline:         surveyDeadline,
+		queryInterval:          queryInterval,
 	}
 }
 
-func (m *master) cooldown() {
+func NewMasterWithStatsd(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageID string,
+	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration, statsdAddr, statsdPrefix string, statsdInterval time.Duration) *Master {
+
+	master := NewMaster(
+		host, workerConfig, command,
+		balanceConfigTemplate, balanceConfigFile,
+		digitalOceanToken, digitalOceanImageID,
+		overloadedCpuThreshold, underusedCpuThreshold,
+		minWorkers, maxWorkers,
+		pollInterval, cooldownInterval, surveyDeadline, queryInterval,
+	)
+	statsdClient := statsd.NewStatsdClient(statsdAddr, statsdPrefix)
+	statsdClient.CreateSocket()
+	master.statsdClientBuffer = statsd.NewStatsdBuffer(statsdInterval, statsdClient)
+
+	return master
+}
+
+func (m *Master) cooldown() {
 	m.coolingDown = true
-	time.Sleep(time.Second * 30)
+	time.Sleep(m.cooldownInterval)
 	m.coolingDown = false
 }
 
-func (m *master) querySlaves(c chan<- float64) {
+func (m *Master) querySlaves(c chan<- float64) {
 	var err error
 	var msg []byte
 	var sock mangos.Socket
@@ -115,10 +142,10 @@ func (m *master) querySlaves(c chan<- float64) {
 	}
 
 	// Set "deadline" for the survey and a timeout for receiving responses
-	if err = sock.SetOption(mangos.OptionSurveyTime, time.Second); err != nil {
+	if err = sock.SetOption(mangos.OptionSurveyTime, m.surveyDeadline); err != nil {
 		utils.Die("SetOption(mangos.OptionSurveyTime): %s", err.Error())
 	}
-	if err = sock.SetOption(mangos.OptionRecvDeadline, time.Second*2); err != nil {
+	if err = sock.SetOption(mangos.OptionRecvDeadline, (m.surveyDeadline+1)*time.Second); err != nil {
 		utils.Die("SetOption(mangos.OptionRecvDeadline): %s", err.Error())
 	}
 
@@ -154,15 +181,15 @@ func (m *master) querySlaves(c chan<- float64) {
 		c <- loadAvg
 
 		// Wait
-		time.Sleep(time.Second * 3)
+		time.Sleep(m.queryInterval)
 	}
 }
 
-func (m *master) shouldAddWorker(loadAvg float64) bool {
+func (m *Master) shouldAddWorker(loadAvg float64) bool {
 	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && int64(len(m.droplets)) < m.maxWorkers
 }
 
-func (m *master) addWorker(c chan<- *godo.Droplet) {
+func (m *Master) addWorker(c chan<- *godo.Droplet) {
 	var (
 		droplet *godo.Droplet
 		err     error
@@ -176,7 +203,7 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 		Size:              "512mb",
 		PrivateNetworking: true,
 		Image: godo.DropletCreateImage{
-			Slug: m.imageSlug,
+			Slug: m.imageID,
 		},
 	}
 
@@ -185,7 +212,7 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 	}
 
 	for {
-		time.Sleep(time.Second * 3)
+		time.Sleep(m.pollInterval)
 		if droplet, _, _ = m.doClient.Droplets.Get(droplet.ID); droplet.Status == "active" {
 			break
 		}
@@ -198,11 +225,11 @@ func (m *master) addWorker(c chan<- *godo.Droplet) {
 	c <- droplet
 }
 
-func (m *master) shouldRemoveWorker(loadAvg float64) bool {
+func (m *Master) shouldRemoveWorker(loadAvg float64) bool {
 	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && int64(len(m.droplets)) > m.minWorkers
 }
 
-func (m *master) removeWorker(c chan<- bool) {
+func (m *Master) removeWorker(c chan<- bool) {
 	// TODO implement logic to remove a worker only after all requests have finished processing
 
 	// Delete the last droplet
@@ -216,7 +243,7 @@ func (m *master) removeWorker(c chan<- bool) {
 	c <- true
 }
 
-func (m *master) writeAddresses() {
+func (m *Master) writeAddresses() {
 	var (
 		file *os.File
 		temp *template.Template
@@ -247,7 +274,7 @@ func (m *master) writeAddresses() {
 	}
 }
 
-func (m *master) reload() {
+func (m *Master) reload() {
 	var (
 		out []byte
 		err error
@@ -259,7 +286,7 @@ func (m *master) reload() {
 	fmt.Printf("Executed command. Output: '%s'\n", strings.TrimSpace(string(out)))
 }
 
-func (m *master) MonitorWorkers() {
+func (m *Master) MonitorWorkers() {
 	// Send out survey requests indefinitely
 	workerQuery := make(chan float64)
 	dropletCreatePoll := make(chan *godo.Droplet)
@@ -272,6 +299,10 @@ func (m *master) MonitorWorkers() {
 		select {
 		case loadAvg := <-workerQuery:
 			fmt.Printf("Load avg: %f\n", loadAvg)
+			if m.statsdClientBuffer != nil {
+				m.statsdClientBuffer.FGauge("loadavg", loadAvg)
+			}
+
 			// Make scaling decision
 			if m.shouldAddWorker(loadAvg) {
 				fmt.Println("Max threshold met")
@@ -287,6 +318,10 @@ func (m *master) MonitorWorkers() {
 			go m.cooldown()
 			m.waitingOnWorkerChange = false
 
+			if m.statsdClientBuffer != nil {
+				m.statsdClientBuffer.Incr("workers", 1)
+			}
+
 			// Add the new droplet to the list
 			m.droplets = append(m.droplets, *newDroplet)
 
@@ -297,11 +332,20 @@ func (m *master) MonitorWorkers() {
 		case <-dropletDeletePoll:
 			go m.cooldown()
 			m.waitingOnWorkerChange = false
+
+			if m.statsdClientBuffer != nil {
+				m.statsdClientBuffer.Incr("workers", -1)
+			}
+
 			m.writeAddresses()
 			m.reload()
 
 		}
 	}
+}
+
+func (m *Master) CleanUp() {
+	m.statsdClientBuffer.Close()
 }
 
 type WorkerConfig struct {

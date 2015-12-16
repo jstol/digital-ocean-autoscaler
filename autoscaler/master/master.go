@@ -388,6 +388,7 @@ func (m *Master) updateWeights() {
 			finalCMD = strings.Join(str, " ")
 
 			// Execute the command
+			fmt.Println("Updating weights...")
 			_, err := exec.Command("sh", "-c", finalCMD).Output()
 			if err != nil {
 				fmt.Printf("Error writing weight to socket: %s\n", err.Error())

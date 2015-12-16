@@ -198,7 +198,7 @@ func (m *Master) queryWorkers(c chan<- float64) {
 				break
 			}
 			parts := strings.Split(string(msg), ",")
-			if len(parts != 2) {
+			if len(parts) != 2 {
 				continue
 			}
 

@@ -20,7 +20,7 @@ go build -o ${PROG} ./autoscaler
 
 ./${PROG} -host ${addr} -token "${token}" -image "${slug}" \
 	-command "service haproxy reload" \
-	-balancetemplate "/root/autoscaler-template.cfg" \
+	-balancetemplate "autoscaler/haproxy-template.cfg" \
 	-balanceconfig "/etc/haproxy/haproxy.cfg" \
 	-workerconfig "autoscaler/config/config.json" \
 	-overloaded 0.7 -underused 0.3 \

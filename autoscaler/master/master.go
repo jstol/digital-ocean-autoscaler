@@ -33,11 +33,39 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 	return token, nil
 }
 
+// Type to hold droplet and private IP
+type Worker struct {
+	droplet     *godo.Droplet
+	privateAddr string
+	publicAddr  string
+	loadAvg     float64
+	weight      int64
+}
+
+func newWorker(droplet *godo.Droplet) *Worker {
+	var privateAddr, publicAddr string
+	for _, addr := range droplet.Networks.V4 {
+		if addr.Type == "private" {
+			privateAddr = addr.IPAddress
+		} else if addr.Type == "public" {
+			publicAddr = addr.IPAddress
+		}
+	}
+
+	return &Worker{
+		droplet,
+		privateAddr,
+		publicAddr,
+		0,
+		256,
+	}
+}
+
 // Master type
 type Master struct {
 	url                                                           url.URL
 	workerConfig                                                  *WorkerConfig
-	droplets                                                      []godo.Droplet
+	workers                                                       []*Worker
 	command, balanceConfigTemplate, balanceConfigFile, imageID    string
 	currentLoadAvg, overloadedCpuThreshold, underusedCpuThreshold float64
 	minWorkers, maxWorkers, workerCount                           int64
@@ -79,10 +107,16 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 		}
 	}
 
+	// Wrap the droplets for easier access to relevant information (public and private IP)
+	var workers []*Worker
+	for _, droplet := range workerDroplets {
+		workers = append(workers, newWorker(&droplet))
+	}
+
 	return &Master{
 		url:                    bindUrl,
 		workerConfig:           workerConfig,
-		droplets:               workerDroplets,
+		workers:                workers,
 		command:                command,
 		balanceConfigTemplate:  balanceConfigTemplate,
 		balanceConfigFile:      balanceConfigFile,
@@ -125,9 +159,10 @@ func (m *Master) cooldown() {
 }
 
 func (m *Master) queryWorkers(c chan<- float64) {
-	var err error
-	var msg []byte
-	var sock mangos.Socket
+	var (
+		err  error
+		sock mangos.Socket
+	)
 
 	// Try to get new "surveyor" socket
 	if sock, err = surveyor.NewSocket(); err != nil {
@@ -158,16 +193,34 @@ func (m *Master) queryWorkers(c chan<- float64) {
 
 		loadAvgs := []float64{}
 		for {
+			var msg []byte
 			if msg, err = sock.Recv(); err != nil {
 				break
 			}
-			fmt.Printf("Server: Received \"%s\" survey response\n", string(msg))
+			parts := strings.Split(string(msg), ",")
+			ip := parts[0]
+			loadAvgString := parts[1]
+
+			// Find the corresponding droplet
+			var worker *Worker
+			for _, w := range m.workers {
+				if w.privateAddr == ip {
+					worker = w
+				}
+				break
+			}
+			if worker == nil {
+				fmt.Println("Message received from unknown worker. Skipping...")
+				continue
+			}
 
 			var loadAvg float64
-			if loadAvg, err = strconv.ParseFloat(string(msg), 64); err != nil {
+			if loadAvg, err = strconv.ParseFloat(string(loadAvgString), 64); err != nil {
 				utils.Die("ParseFloat(): %s", err.Error())
 			}
 
+			// Set their load average and append this worker's load average to the list
+			worker.loadAvg = loadAvg
 			loadAvgs = append(loadAvgs, loadAvg)
 		}
 
@@ -189,7 +242,7 @@ func (m *Master) queryWorkers(c chan<- float64) {
 }
 
 func (m *Master) shouldAddWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && int64(len(m.droplets)) < m.maxWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg > m.overloadedCpuThreshold && int64(len(m.workers)) < m.maxWorkers
 }
 
 func (m *Master) addWorker(c chan<- *godo.Droplet) {
@@ -199,7 +252,7 @@ func (m *Master) addWorker(c chan<- *godo.Droplet) {
 	)
 
 	// TODO find a better way to dynamically name the workers, create using a snapshot
-	name := fmt.Sprintf("%s%d", m.workerConfig.NamePrefix, len(m.droplets)+1)
+	name := fmt.Sprintf("%s%d", m.workerConfig.NamePrefix, len(m.workers)+1)
 	createRequest := &godo.DropletCreateRequest{
 		Name:              name,
 		Region:            "tor1",
@@ -229,19 +282,19 @@ func (m *Master) addWorker(c chan<- *godo.Droplet) {
 }
 
 func (m *Master) shouldRemoveWorker(loadAvg float64) bool {
-	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && int64(len(m.droplets)) > m.minWorkers
+	return !m.waitingOnWorkerChange && !m.coolingDown && loadAvg < m.underusedCpuThreshold && int64(len(m.workers)) > m.minWorkers
 }
 
 func (m *Master) removeWorker(c chan<- bool) {
 	// TODO implement logic to remove a worker only after all requests have finished processing
 
 	// Delete the last droplet
-	toDelete := m.droplets[len(m.droplets)-1]
-	if _, err := m.doClient.Droplets.Delete(toDelete.ID); err != nil {
+	toDelete := m.workers[len(m.workers)-1]
+	if _, err := m.doClient.Droplets.Delete(toDelete.droplet.ID); err != nil {
 		utils.Die("Error deleting droplet: %s", err.Error())
 	}
 
-	m.droplets = m.droplets[0 : len(m.droplets)-1]
+	m.workers = m.workers[0 : len(m.workers)-1]
 
 	c <- true
 }
@@ -261,13 +314,15 @@ func (m *Master) writeAddresses() {
 	}
 
 	// Get the IP addresses together
-	ips := make(map[string]string)
-	for _, droplet := range m.droplets {
-		for _, addr := range droplet.Networks.V4 {
-			if addr.Type == "public" {
-				ips[droplet.Name] = addr.IPAddress
-				break
-			}
+	type haproxyInfo struct {
+		addr   string
+		weight int64
+	}
+	ips := make(map[string]haproxyInfo)
+	for _, worker := range m.workers {
+		ips[worker.droplet.Name] = haproxyInfo{
+			worker.publicAddr,
+			worker.weight,
 		}
 	}
 
@@ -292,9 +347,50 @@ func (m *Master) reload() {
 func (m *Master) streamStats() {
 	for {
 		m.statsdClientBuffer.FGauge("loadavg", m.currentLoadAvg)
-		m.statsdClientBuffer.Gauge("workers", int64(len(m.droplets)))
+		m.statsdClientBuffer.Gauge("workers", int64(len(m.workers)))
 		fmt.Println("Streamed to statsd")
 		time.Sleep(time.Second * 5)
+	}
+}
+
+func (m *Master) updateWeights() {
+	for {
+		var cmd string
+		var sockconfig string
+		sockconfig = "/etc/haproxy/haproxy.sock"
+
+		// Calculate the new weights
+		for _, worker := range m.workers {
+			avg := worker.loadAvg
+			maxLoad := m.overloadedCpuThreshold
+			if avg < 0.001 {
+				avg = 0.001
+			}
+			if avg > maxLoad {
+				avg = maxLoad
+			}
+
+			// Calculate the worker's weight
+			weight := int64(((255 / maxLoad) * ((maxLoad + 0.001) - avg)) + 1)
+			worker.weight = weight
+
+			// Compose the command
+			weightString := strconv.FormatInt(weight, 10)
+			s := []string{"set", "weight", fmt.Sprintf("nodes/%s", worker.droplet.Name), weightString}
+			cmd = "'" + strings.Join(s, " ") + "'"
+			str := []string{"echo", cmd, "|", "socat", "stdio", sockconfig}
+
+			var finalCMD string
+			finalCMD = strings.Join(str, " ")
+
+			// Execute the command
+			_, err := exec.Command("sh", "-c", finalCMD).Output()
+			if err != nil {
+				fmt.Printf("Error writing weight to socket: %s\n", err.Error())
+			}
+		}
+
+		time.Sleep(time.Minute * 1)
 	}
 }
 
@@ -306,6 +402,8 @@ func (m *Master) MonitorWorkers() {
 
 	// Start querying the worker threads
 	go m.queryWorkers(workerQuery)
+	// Start the goroutine to update weights
+	go m.updateWeights()
 
 	// Start streaming stats if needed
 	if m.statsdClientBuffer != nil {
@@ -334,7 +432,7 @@ func (m *Master) MonitorWorkers() {
 			m.waitingOnWorkerChange = false
 
 			// Add the new droplet to the list
-			m.droplets = append(m.droplets, *newDroplet)
+			m.workers = append(m.workers, newWorker(newDroplet))
 
 			// Write it to the config file and execute the "reload" command
 			m.writeAddresses()

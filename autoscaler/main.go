@@ -24,7 +24,7 @@ func main() {
 	minWorkers := flag.Int64("min", 1, "the minimum number of workers to have")
 	maxWorkers := flag.Int64("max", 10, "the minimum number of workers to have")
 	streamStatsd := flag.Bool("statsd", false, "a flag indicating whether or not to stream statsd stats")
-	statsdAddr := flag.String("statsdaddr", "", "the address and port of the statsd server")
+	statsdAddr := flag.String("statsdaddr", "localhost:8125", "the address and port of the statsd server")
 	statsdPrefix := flag.String("statsdprefix", "autoscaler.", "the statsd prefix to use")
 	statsdInterval := flag.Int64("statsdinterval", 2, "the number of seconds to wait before flushing every batch of statsd stats")
 	pollInterval := flag.Int64("pollinterval", 3, "the amount of time (in seconds) to wait between polling Digital Ocean for updates")

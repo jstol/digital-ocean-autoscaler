@@ -31,6 +31,8 @@ func main() {
 	cooldownInterval := flag.Int64("cooldowninterval", 15, "the amount of time (in seconds) to wait before making changes to workers after altering the worker set")
 	surveyDeadline := flag.Int64("surveydeadline", 1, "the amount of time (in seconds) to wait to receive feedback from workers")
 	queryInterval := flag.Int64("surveytimeout", 3, "the amount of time (in seconds) to leave between querying workers")
+	changeWeights := flag.Bool("weights", true, "whether or not to use weights")
+	scaleNodes := flag.Bool("autoscale", true, "whether or not to scale nodes up and down")
 	flag.Parse()
 
 	// Handle checking command line arguments
@@ -80,7 +82,9 @@ func main() {
 			*digitalOceanToken, *digitalOceanImageID,
 			*overloadedCpuThreshold, *underusedCpuThreshold,
 			*minWorkers, *maxWorkers,
-			time.Duration(*pollInterval)*time.Second, time.Duration(*cooldownInterval)*time.Second, time.Duration(*surveyDeadline)*time.Second, time.Duration(*queryInterval)*time.Second,
+			time.Duration(*pollInterval)*time.Second, time.Duration(*cooldownInterval)*time.Second,
+			time.Duration(*surveyDeadline)*time.Second, time.Duration(*queryInterval)*time.Second,
+			*scaleNodes, *changeWeights,
 		)
 	} else {
 		monitor = master.NewMasterWithStatsd(
@@ -91,7 +95,9 @@ func main() {
 			*digitalOceanToken, *digitalOceanImageID,
 			*overloadedCpuThreshold, *underusedCpuThreshold,
 			*minWorkers, *maxWorkers,
-			time.Duration(*pollInterval)*time.Second, time.Duration(*cooldownInterval)*time.Second, time.Duration(*surveyDeadline)*time.Second, time.Duration(*queryInterval)*time.Second,
+			time.Duration(*pollInterval)*time.Second, time.Duration(*cooldownInterval)*time.Second,
+			time.Duration(*surveyDeadline)*time.Second, time.Duration(*queryInterval)*time.Second,
+			*scaleNodes, *changeWeights,
 			*statsdAddr, *statsdPrefix, time.Duration(*statsdInterval)*time.Second,
 		)
 	}

@@ -64,6 +64,7 @@ func newWorker(droplet godo.Droplet) *Worker {
 // Master type
 type Master struct {
 	url                                                           url.URL
+	scaleNodes, changeWeights                                     bool
 	workerConfig                                                  *WorkerConfig
 	workers                                                       []*Worker
 	command, balanceConfigTemplate, balanceConfigFile, imageID    string
@@ -77,7 +78,8 @@ type Master struct {
 }
 
 func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageID string,
-	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration) *Master {
+	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration,
+	scaleNodes, changeWeights bool) *Master {
 
 	var err error
 	bindUrl := url.URL{Scheme: "tcp", Host: host}
@@ -115,6 +117,8 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 
 	return &Master{
 		url:                    bindUrl,
+		scaleNodes:             scaleNodes,
+		changeWeights:          changeWeights,
 		workerConfig:           workerConfig,
 		workers:                workers,
 		command:                command,
@@ -135,7 +139,9 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 }
 
 func NewMasterWithStatsd(host string, workerConfig *WorkerConfig, command, balanceConfigTemplate, balanceConfigFile, digitalOceanToken, digitalOceanImageID string,
-	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration, statsdAddr, statsdPrefix string, statsdInterval time.Duration) *Master {
+	overloadedCpuThreshold, underusedCpuThreshold float64, minWorkers, maxWorkers int64, pollInterval, cooldownInterval, surveyDeadline, queryInterval time.Duration,
+	scaleNodes, changeWeights bool,
+	statsdAddr, statsdPrefix string, statsdInterval time.Duration) *Master {
 
 	master := NewMaster(
 		host, workerConfig, command,
@@ -144,6 +150,7 @@ func NewMasterWithStatsd(host string, workerConfig *WorkerConfig, command, balan
 		overloadedCpuThreshold, underusedCpuThreshold,
 		minWorkers, maxWorkers,
 		pollInterval, cooldownInterval, surveyDeadline, queryInterval,
+		scaleNodes, changeWeights,
 	)
 	statsdClient := statsd.NewStatsdClient(statsdAddr, statsdPrefix)
 	statsdClient.CreateSocket()
@@ -417,7 +424,9 @@ func (m *Master) MonitorWorkers() {
 	// Start querying the worker threads
 	go m.queryWorkers(workerQuery)
 	// Start the goroutine to update weights
-	go m.updateWeights()
+	if m.changeWeights {
+		go m.updateWeights()
+	}
 
 	// Start streaming stats if needed
 	if m.statsdClientBuffer != nil {
@@ -431,14 +440,16 @@ func (m *Master) MonitorWorkers() {
 			m.currentLoadAvg = loadAvg
 
 			// Make scaling decision
-			if m.shouldAddWorker(loadAvg) {
-				fmt.Println("Max threshold met")
-				m.waitingOnWorkerChange = true
-				go m.addWorker(dropletCreatePoll)
-			} else if m.shouldRemoveWorker(loadAvg) {
-				fmt.Println("Min threshold met")
-				m.waitingOnWorkerChange = true
-				go m.removeWorker(dropletDeletePoll)
+			if m.scaleNodes {
+				if m.shouldAddWorker(loadAvg) {
+					fmt.Println("Max threshold met")
+					m.waitingOnWorkerChange = true
+					go m.addWorker(dropletCreatePoll)
+				} else if m.shouldRemoveWorker(loadAvg) {
+					fmt.Println("Min threshold met")
+					m.waitingOnWorkerChange = true
+					go m.removeWorker(dropletDeletePoll)
+				}
 			}
 
 		case newDroplet := <-dropletCreatePoll:

@@ -18,12 +18,12 @@ trap cleanup EXIT
 
 go build -o ${PROG} ./autoscaler
 
-./${PROG} -host=${addr} -token="${token}" -image="${slug}" \
+./${PROG} -host ${addr} -token="${token}" -image="${slug}" \
 	-command="service haproxy reload" \
 	-balancetemplate="autoscaler/haproxy-template.cfg" \
 	-balanceconfig="/etc/haproxy/haproxy.cfg" \
 	-workerconfig="autoscaler/config/config.json" \
-	-overloaded=0.65 -underused=0.2 \
-	-min=10 -max=20 \
+	-overloaded=0.7 -underused=0.3 \
+	-min=20 -max=20 \
 	-statsd=true -statsdaddr="localhost:8125" \
-	-weights=true -autoscale=true
+	-weights=true -autoscale=false

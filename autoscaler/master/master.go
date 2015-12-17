@@ -415,7 +415,7 @@ func (m *Master) updateWeights() {
 				fmt.Printf("Error writing weight to socket: %s\n", err.Error())
 			}
 		}
-		time.Sleep(time.Minute * 1)
+		time.Sleep(time.Second * 20)
 	}
 }
 

@@ -99,7 +99,9 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 
 	// Get a list of all of the droplets and filter out any irrelevant ones
 	var workerDroplets, allDroplets []godo.Droplet
-	if allDroplets, _, err = client.Droplets.List(nil); err != nil {
+	if allDroplets, _, err = client.Droplets.List(&godo.ListOptions{
+		PerPage: 1000,
+	}); err != nil {
 		utils.Die("Error getting the list of droplets: %s", err)
 	}
 

@@ -57,7 +57,7 @@ func newWorker(droplet godo.Droplet) *Worker {
 		privateAddr,
 		publicAddr,
 		0,
-		256,
+		1,
 	}
 }
 

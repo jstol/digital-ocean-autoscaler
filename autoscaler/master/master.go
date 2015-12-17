@@ -323,7 +323,6 @@ func (m *Master) writeConfigFile() {
 		Weight int64
 	}
 	ips := make(map[string]haproxyInfo)
-	fmt.Printf("WORKER LENGTH: %d\n", len(m.workers))
 	for _, worker := range m.workers {
 		ips[worker.droplet.Name] = haproxyInfo{
 			worker.publicAddr,
@@ -332,8 +331,9 @@ func (m *Master) writeConfigFile() {
 	}
 
 	// Print out all of the objects
+	fmt.Printf("Writing out new config for %d workers\n", len(m.workers))
 	for key, ip := range ips {
-		fmt.Printf("%s: %s, %d\n", key, ip.Addr, ip.Weight)
+		fmt.Printf("%s: ip=%s, weight=%d\n", key, ip.Addr, ip.Weight)
 	}
 
 	// Write changes out to the template file

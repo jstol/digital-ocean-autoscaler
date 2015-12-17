@@ -35,14 +35,14 @@ func (t *TokenSource) Token() (*oauth2.Token, error) {
 
 // Type to hold droplet and private IP
 type Worker struct {
-	droplet     *godo.Droplet
+	droplet     godo.Droplet
 	privateAddr string
 	publicAddr  string
 	loadAvg     float64
 	weight      int64
 }
 
-func newWorker(droplet *godo.Droplet) *Worker {
+func newWorker(droplet godo.Droplet) *Worker {
 	var privateAddr, publicAddr string
 	for _, addr := range droplet.Networks.V4 {
 		if addr.Type == "private" {
@@ -110,7 +110,7 @@ func NewMaster(host string, workerConfig *WorkerConfig, command, balanceConfigTe
 	// Wrap the droplets for easier access to relevant information (public and private IP)
 	var workers []*Worker
 	for _, droplet := range workerDroplets {
-		workers = append(workers, newWorker(&droplet))
+		workers = append(workers, newWorker(droplet))
 	}
 
 	return &Master{
@@ -214,7 +214,7 @@ func (m *Master) queryWorkers(c chan<- float64) {
 				break
 			}
 			if worker == nil {
-				fmt.Println("Message received from unknown worker. Skipping...")
+				fmt.Printf("Message received from unknown worker '%s'. Skipping...\n", ip)
 				continue
 			}
 
@@ -323,11 +323,17 @@ func (m *Master) writeConfigFile() {
 		Weight int64
 	}
 	ips := make(map[string]haproxyInfo)
+	fmt.Printf("WORKER LENGTH: %d\n", len(m.workers))
 	for _, worker := range m.workers {
 		ips[worker.droplet.Name] = haproxyInfo{
 			worker.publicAddr,
 			worker.weight,
 		}
+	}
+
+	// Print out all of the objects
+	for key, ip := range ips {
+		fmt.Printf("%s: %s, %d\n", key, ip.Addr, ip.Weight)
 	}
 
 	// Write changes out to the template file
@@ -358,9 +364,8 @@ func (m *Master) streamStats() {
 }
 
 func (m *Master) updateWeights() {
-	fmt.Println("Updating weights...")
 	for {
-		time.Sleep(time.Minute * 1)
+		fmt.Println("Updating weights...")
 
 		var cmd string
 		var sockconfig string
@@ -396,6 +401,7 @@ func (m *Master) updateWeights() {
 				fmt.Printf("Error writing weight to socket: %s\n", err.Error())
 			}
 		}
+		time.Sleep(time.Minute * 1)
 	}
 }
 
@@ -440,7 +446,7 @@ func (m *Master) MonitorWorkers() {
 			m.waitingOnWorkerChange = false
 
 			// Add the new droplet to the list
-			m.workers = append(m.workers, newWorker(newDroplet))
+			m.workers = append(m.workers, newWorker(*newDroplet))
 
 			// Write it to the config file and execute the "reload" command
 			m.writeConfigFile()

@@ -369,6 +369,7 @@ func (m *Master) streamStats() {
 		m.statsdClientBuffer.FGauge("loadavg", m.currentLoadAvg)
 		for _, worker := range m.workers {
 			m.statsdClientBuffer.FGauge(fmt.Sprintf("%s-loadavg", worker.droplet.Name), worker.loadAvg)
+			m.statsdClientBuffer.Gauge(fmt.Sprintf("%s-weight", worker.droplet.Name), worker.weight)
 		}
 
 		fmt.Println("Streamed to statsd")

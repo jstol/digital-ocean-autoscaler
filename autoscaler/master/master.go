@@ -210,8 +210,8 @@ func (m *Master) queryWorkers(c chan<- float64) {
 			for _, w := range m.workers {
 				if w.privateAddr == ip {
 					worker = w
+					break
 				}
-				break
 			}
 			if worker == nil {
 				fmt.Printf("Message received from unknown worker '%s'. Skipping...\n", ip)

@@ -69,6 +69,13 @@ func main() {
 		utils.Die("Error parsing JSON in config file: %s", err.Error())
 	}
 
+	if !*changeWeights {
+		fmt.Println("NOT CHANGING WEIGHTS")
+	}
+	if !*scaleNodes {
+		fmt.Println("NOT SCALING NODES")
+	}
+
 	// Start the master
 	fmt.Printf("Starting master at %s\n", *host)
 	var monitor *master.Master

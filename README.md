@@ -1,6 +1,6 @@
 # digital-ocean-autoscaler
-An autoscaler for Digital Ocean droplets that sits on top of HAProxy.
+A horizontal autoscaler for applications deployed to DigitalOcean. The tool can be used alongside HAProxy to augment its weighted round robin load balancing algorithm. Weights can be dynamically set to redirect requests to the least loaded worker Droplet.
 
-This tool runs a "master" process on the same droplet as HAProxy, with "client" processes running on app droplets.
+This tool runs a "node manager" process (on the same droplet as HAProxy), with "worker monitor" processes running on app Droplets. Worker monitor processes share CPU load metrics (`loadavg`) with the node manager, which then in turn adds/removes Droplets as needed (and dynamically sets HAProxy's weights for each of the app server Droplets).
 
-The clients share CPU load metrics (`loadavg`) with the master, which then in turn dynamically sets the load balancing weights of the app servers and adds/removes droplets as needed.
+Node managers communicate with worker monitors through a nanomsg `SURVEY` socket (using the [Mangos](https://github.com/go-mangos/mangos) library).
